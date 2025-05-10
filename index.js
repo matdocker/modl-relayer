@@ -34,9 +34,14 @@ app.get('/health', (req, res) => {
 
 // ✅ Relay endpoint with validation & debug logs
 app.post('/relay', async (req, res) => {
-  const { paymaster, target, encodedData, gasLimit, user } = req.body;
+  const {
+    paymaster,
+    target,
+    encodedData, // ✅ now consistent
+    gasLimit,
+    user,
+  } = req.body;
 
-  // Validate input
   if (
     !paymaster ||
     !target ||
@@ -58,13 +63,14 @@ app.post('/relay', async (req, res) => {
   });
 
   try {
+    // 🛠️ FIXED: use `encodedData`, not undefined `data`
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
       gasLimit: gasLimit + 100000,
     });
 
     console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
     await tx.wait();
-    res.json({ txHash: tx.hash });
+    return res.json({ txHash: tx.hash });
   } catch (error) {
     console.error('❌ Relay error:', {
       message: error.message,
@@ -72,11 +78,11 @@ app.post('/relay', async (req, res) => {
       data: error.data,
     });
 
-    res.status(500).json({ error: error.message || 'Relay failed' });
+    return res.status(500).json({
+      error: error.message || 'Relay failed',
+    });
   }
 });
-
-
 
 
 // ✅ Start server
