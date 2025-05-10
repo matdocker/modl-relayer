@@ -32,27 +32,52 @@ app.get('/health', (req, res) => {
   res.status(200).send('✅ MODL Relayer is healthy');
 });
 
-// ✅ Relay endpoint
+// ✅ Relay endpoint with validation & debug logs
 app.post('/relay', async (req, res) => {
   const { paymaster, target, data, gasLimit, user } = req.body;
 
-  if (!paymaster || !target || !data || !gasLimit || !user) {
-    return res.status(400).json({ error: '❌ Missing required fields' });
+  // Validate required fields and ensure proper format
+  if (
+    !paymaster ||
+    !target ||
+    !user ||
+    typeof data !== 'string' ||
+    !data.startsWith('0x') ||
+    typeof gasLimit !== 'number'
+  ) {
+    console.error('❌ Invalid relay request body:', req.body);
+    return res.status(400).json({ error: '❌ Missing or invalid required fields' });
   }
+
+  console.log('📥 Incoming relay request:', {
+    paymaster,
+    target,
+    user,
+    gasLimit,
+    data: data.slice(0, 10) + '...', // log start of data only
+  });
 
   try {
     const tx = await relayHub.relayCall(paymaster, target, data, gasLimit, {
-      gasLimit: gasLimit + 100000,
+      gasLimit: gasLimit + 100000, // overhead buffer
     });
 
     console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
     await tx.wait();
-    res.json({ txHash: tx.hash });
-  } catch (error) {
-    console.error('❌ Relay error:', error);
-    res.status(500).json({ error: error.message });
+    return res.json({ txHash: tx.hash });
+  } catch (error: any) {
+    console.error('❌ Relay error:', {
+      message: error.message,
+      reason: error.reason,
+      data: error.data,
+    });
+
+    return res.status(500).json({
+      error: error.message || 'Relay failed',
+    });
   }
 });
+
 
 // ✅ Start server
 app.listen(port, () => {
