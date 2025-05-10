@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 app.use(cors());  // ✅ ENABLE CORS
 app.use(express.json()); // ✅ Parse JSON
 
-const providerUrl = `${process.env.RPC_URL}${process.env.THIRDWEB_API_KEY}`;
+const providerUrl = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
 const privateKey = process.env.PRIVATE_KEY;
 const relayHubAddress = process.env.RELAY_HUB_ADDRESS;
 const paymasterAddress = process.env.PAYMASTER_ADDRESS;
