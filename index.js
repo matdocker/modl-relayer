@@ -1,22 +1,63 @@
 const express = require('express');
-const cors = require('cors');
-const { Wallet, JsonRpcProvider } = require('ethers');
+const { ethers } = require('ethers');
 require('dotenv').config();
-
-const relayHandler = require('./relayController');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Parse JSON
 
-const provider = new JsonRpcProvider(process.env.RPC_URL);
-const wallet = new Wallet(process.env.PRIVATE_KEY, provider);
+const providerUrl = `${process.env.RPC_URL}${process.env.THIRDWEB_API_KEY}`;
+const privateKey = process.env.PRIVATE_KEY;
+const relayHubAddress = process.env.RELAY_HUB_ADDRESS;
+const paymasterAddress = process.env.PAYMASTER_ADDRESS;
 
-app.get('/health', (req, res) => res.status(200).send('✅ MODL Relayer healthy'));
+if (!providerUrl || !privateKey || !relayHubAddress || !paymasterAddress) {
+  console.error('❌ Missing required .env variables');
+  process.exit(1);
+}
 
-app.post('/relay', (req, res) => relayHandler(req, res, wallet, provider));
+const provider = new ethers.JsonRpcProvider(providerUrl);
+const wallet = new ethers.Wallet(privateKey, provider);
 
-app.listen(port, () => console.log(`✅ MODL Relayer running on port ${port}`));
-setInterval(() => console.log('⏰ Relayer heartbeat'), 60 * 1000);
+const relayHubAbi = [
+  'function relayCall(address paymaster, address target, bytes data, uint256 gasLimit) external',
+];
+const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('✅ MODL Relayer is healthy');
+});
+
+// Relay endpoint
+app.post('/relay', async (req, res) => {
+  const { paymaster, target, data, gasLimit, user } = req.body;
+
+  if (!paymaster || !target || !data || !gasLimit || !user) {
+    return res.status(400).json({ error: '❌ Missing required fields' });
+  }
+
+  try {
+    const tx = await relayHub.relayCall(paymaster, target, data, gasLimit, {
+      gasLimit: gasLimit + 100000,
+    });
+
+    console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
+    await tx.wait();
+    res.json({ txHash: tx.hash });
+  } catch (error) {
+    console.error('❌ Relay error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`✅ MODL Relayer running on port ${port}`);
+});
+
+// Periodic heartbeat
+setInterval(() => {
+  console.log('⏰ MODL Relayer heartbeat - still alive');
+}, 60 * 1000);
