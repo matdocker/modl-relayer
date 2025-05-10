@@ -65,7 +65,7 @@ app.post('/relay', async (req, res) => {
     console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
     await tx.wait();
     return res.json({ txHash: tx.hash });
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ Relay error:', {
       message: error.message,
       reason: error.reason,
