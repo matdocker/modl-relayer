@@ -34,15 +34,15 @@ app.get('/health', (req, res) => {
 
 // ✅ Relay endpoint with validation & debug logs
 app.post('/relay', async (req, res) => {
-  const { paymaster, target, data, gasLimit, user } = req.body;
+  const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
-  // Validate required fields and ensure proper format
+  // Validate input
   if (
     !paymaster ||
     !target ||
     !user ||
-    typeof data !== 'string' ||
-    !data.startsWith('0x') ||
+    typeof encodedData !== 'string' ||
+    !encodedData.startsWith('0x') ||
     typeof gasLimit !== 'number'
   ) {
     console.error('❌ Invalid relay request body:', req.body);
@@ -54,17 +54,17 @@ app.post('/relay', async (req, res) => {
     target,
     user,
     gasLimit,
-    data: data.slice(0, 10) + '...', // log start of data only
+    data: encodedData.slice(0, 10) + '...',
   });
 
   try {
-    const tx = await relayHub.relayCall(paymaster, target, data, gasLimit, {
-      gasLimit: gasLimit + 100000, // overhead buffer
+    const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
+      gasLimit: gasLimit + 100000,
     });
 
     console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
     await tx.wait();
-    return res.json({ txHash: tx.hash });
+    res.json({ txHash: tx.hash });
   } catch (error) {
     console.error('❌ Relay error:', {
       message: error.message,
@@ -72,11 +72,11 @@ app.post('/relay', async (req, res) => {
       data: error.data,
     });
 
-    return res.status(500).json({
-      error: error.message || 'Relay failed',
-    });
+    res.status(500).json({ error: error.message || 'Relay failed' });
   }
 });
+
+
 
 
 // ✅ Start server
