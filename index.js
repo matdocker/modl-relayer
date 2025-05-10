@@ -1,11 +1,13 @@
 const express = require('express');
+const cors = require('cors');  // ✅ ADD CORS
 const { ethers } = require('ethers');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(express.json()); // Parse JSON
+app.use(cors());  // ✅ ENABLE CORS
+app.use(express.json()); // ✅ Parse JSON
 
 const providerUrl = `${process.env.RPC_URL}${process.env.THIRDWEB_API_KEY}`;
 const privateKey = process.env.PRIVATE_KEY;
@@ -25,12 +27,12 @@ const relayHubAbi = [
 ];
 const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
 
-// Health check endpoint
+// ✅ Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).send('✅ MODL Relayer is healthy');
 });
 
-// Relay endpoint
+// ✅ Relay endpoint
 app.post('/relay', async (req, res) => {
   const { paymaster, target, data, gasLimit, user } = req.body;
 
@@ -52,12 +54,12 @@ app.post('/relay', async (req, res) => {
   }
 });
 
-// Start server
+// ✅ Start server
 app.listen(port, () => {
   console.log(`✅ MODL Relayer running on port ${port}`);
 });
 
-// Periodic heartbeat
+// ✅ Periodic heartbeat
 setInterval(() => {
   console.log('⏰ MODL Relayer heartbeat - still alive');
 }, 60 * 1000);
