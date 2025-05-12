@@ -8,10 +8,10 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ✅ CORS: Allow specific origins from .env and handle preflight OPTIONS
+// ✅ CORS: Allow specific origins and handle preflight OPTIONS
 const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map(origin => origin.trim()) || [];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -23,10 +23,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   credentials: true,
-}));
+  optionsSuccessStatus: 204, // ✅ Important for legacy browsers
+};
 
-// ✅ Explicit OPTIONS handler for preflight requests
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // ✅ Catch-all preflight handler
 
 app.use(express.json());
 
