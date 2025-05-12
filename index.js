@@ -3,19 +3,23 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { ethers } = require("ethers");
-const app = express();
+
+const app  = express();
 const port = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
 
-// Load MODLRelayHub ABI
+// ─── Contract setup ──────────────────────────────────────────────────────────
 const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+const wallet   = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi, wallet);
 
+console.log("🛡  Using RelayHub proxy:", relayHub.address);
+
+// ─── /relay endpoint ─────────────────────────────────────────────────────────
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
@@ -24,17 +28,27 @@ app.post("/relay", async (req, res) => {
   }
 
   try {
-    console.log("📦 Incoming relay request:");
-    console.log("  → Paymaster:", paymaster);
-    console.log("  → Target:", target);
-    console.log("  → EncodedData:", encodedData);
-    console.log("  → GasLimit:", gasLimit);
-    console.log("  → User:", user);
+    console.log("\n📦 Incoming relay request");
+    console.table({ paymaster, target, gasLimit, user, encodedData });
 
-    const feeData = await provider.getFeeData();
+    // 1️⃣ Simulate with callStatic to catch revert reasons
+    try {
+      await relayHub.callStatic.relayCall(
+        paymaster,
+        target,
+        encodedData,
+        gasLimit,
+        { from: wallet.address }
+      );
+      console.log("✅ callStatic passed – proceeding to send tx");
+    } catch (simErr) {
+      console.error("❌ callStatic revert reason:", simErr.reason || simErr.shortMessage);
+      return res.status(500).json({ error: simErr.reason || "callStatic reverted" });
+    }
 
-    // Safely construct tx
-    const txRequest = await relayHub.relayCall.populateTransaction(
+    // 2️⃣ Build the actual transaction
+    const feeData  = await provider.getFeeData();
+    const txReq    = await relayHub.relayCall.populateTransaction(
       paymaster,
       target,
       encodedData,
@@ -42,23 +56,25 @@ app.post("/relay", async (req, res) => {
     );
 
     const tx = await wallet.sendTransaction({
-      ...txRequest,
-      gasLimit: gasLimit + 100000,
-      gasPrice: feeData.gasPrice,
+      ...txReq,
+      gasLimit: Number(gasLimit) + 100_000,
+      gasPrice: feeData.gasPrice ?? undefined
     });
 
-    console.log("⛽ Relay tx sent:", tx.hash);
+    console.log("⛽ Relay tx broadcast:", tx.hash);
 
     const receipt = await tx.wait();
-    console.log("📬 Tx mined:", receipt.transactionHash);
+    if (receipt.status !== 1) throw new Error("Tx reverted on-chain");
 
-    res.json({ txHash: tx.hash });
+    console.log("📬 Tx mined:", receipt.transactionHash);
+    res.json({ txHash: receipt.transactionHash });
+
   } catch (err) {
     console.error("❌ Relay failed:", err);
-    res.status(500).json({ error: err?.message || "Relay error" });
+    res.status(500).json({ error: err?.reason || err?.message || "Relay error" });
   }
 });
 
 app.listen(port, () => {
-  console.log(`✅ MODL Relayer running on http://localhost:${port}`);
+  console.log(`✅ MODL Relayer listening on http://localhost:${port}`);
 });
