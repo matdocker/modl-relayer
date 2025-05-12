@@ -32,13 +32,18 @@ app.post("/relay", async (req, res) => {
     console.log("\n📦 Incoming relay request");
     console.table({ paymaster, target, gasLimit, user, encodedData });
 
+    // Append user address to calldata for ERC2771 compatibility
+    const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
+    const dataWithUser = encodedData + userBytes.slice(2); // strip 0x from encoded address
+
     // 1️⃣ Simulate with callStatic to catch revert reasons
     try {
       await relayHub.callStatic.relayCall(
         paymaster,
         target,
-        encodedData,
+        dataWithUser,
         gasLimit,
+        user,
         { from: wallet.address }
       );
       console.log("✅ callStatic passed – proceeding to send tx");
@@ -48,12 +53,13 @@ app.post("/relay", async (req, res) => {
     }
 
     // 2️⃣ Build the actual transaction
-    const feeData  = await provider.getFeeData();
-    const txReq    = await relayHub.relayCall.populateTransaction(
+    const feeData = await provider.getFeeData();
+    const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
       target,
-      encodedData,
-      gasLimit
+      dataWithUser,
+      gasLimit,
+      user
     );
 
     const tx = await wallet.sendTransaction({
