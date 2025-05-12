@@ -33,6 +33,7 @@ app.post("/relay", async (req, res) => {
 
     const feeData = await provider.getFeeData();
 
+    // Safely construct tx
     const txRequest = await relayHub.relayCall.populateTransaction(
       paymaster,
       target,
@@ -47,6 +48,7 @@ app.post("/relay", async (req, res) => {
     });
 
     console.log("⛽ Relay tx sent:", tx.hash);
+
     const receipt = await tx.wait();
     console.log("📬 Tx mined:", receipt.transactionHash);
 
@@ -55,7 +57,6 @@ app.post("/relay", async (req, res) => {
     console.error("❌ Relay failed:", err);
     res.status(500).json({ error: err?.message || "Relay error" });
   }
-
 });
 
 app.listen(port, () => {
