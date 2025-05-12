@@ -18,14 +18,23 @@ const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi,
 
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
+
   if (!paymaster || !target || !encodedData || !gasLimit || !user) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
   try {
+    console.log("📦 Incoming relay request:");
+    console.log("  → Paymaster:", paymaster);
+    console.log("  → Target:", target);
+    console.log("  → EncodedData:", encodedData);
+    console.log("  → GasLimit:", gasLimit);
+    console.log("  → User:", user);
+
+    const feeData = await provider.getFeeData();
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
       gasLimit: gasLimit + 100_000,
-      gasPrice: (await provider.getFeeData()).gasPrice,
+      gasPrice: feeData.gasPrice,
     });
 
     console.log("⛽ Relay tx sent:", tx.hash);
@@ -37,6 +46,7 @@ app.post("/relay", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.listen(port, () => {
   console.log(`✅ MODL Relayer running on http://localhost:${port}`);
