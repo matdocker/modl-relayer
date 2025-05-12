@@ -60,14 +60,17 @@ app.post('/relay', async (req, res) => {
     target,
     gasLimit,
     user,
-    preview: encodedData.slice(0, 10) + '...'
+    preview: encodedData.slice(0, 10) + '...',
   });
 
   try {
     const gasEstimate = gasLimit + 100_000;
+    const { gasPrice } = await provider.getFeeData(); // ✅ Ethers v6 compatible
+    if (!gasPrice) throw new Error("Gas price unavailable from provider");
+
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
       gasLimit: gasEstimate,
-      gasPrice: await provider.getGasPrice(),
+      gasPrice: gasPrice,
     });
 
     console.log(`🚀 relayCall() tx sent: ${tx.hash}`);
