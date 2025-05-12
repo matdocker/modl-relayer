@@ -8,13 +8,23 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ✅ CORS: Allow specific domains (adjust for production)
+// ✅ CORS: Allow specific domains and handle preflight
+const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map(origin => origin.trim()) || [];
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://your-frontend-domain.com'], // 👈 whitelist your frontend
-  methods: ['GET', 'POST'],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`❌ CORS blocked: ${origin}`));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
+  credentials: true,
 }));
 
+app.options('/relay', cors()); // ✅ Handle preflight for relay path
 app.use(express.json());
 
 // ✅ Load environment
