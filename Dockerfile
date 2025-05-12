@@ -7,7 +7,6 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 8080
-# Use the environment variable PORT if it is set, otherwise default to 8080
+# EXPOSE 3000
 
 CMD ["npm", "start"]

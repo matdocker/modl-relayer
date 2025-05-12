@@ -1,4 +1,3 @@
-// index.js -------------------------------------------------------------
 const express = require('express');
 const cors    = require('cors');
 const { ethers } = require('ethers');
@@ -7,8 +6,10 @@ const path = require('path');
 require('dotenv').config();
 
 const app  = express();
-const port = parseInt(process.env.PORT || '8080', 10);   // <─ use Railway PORT
-const host = '0.0.0.0';    
+const port = parseInt(process.env.PORT || '8080', 10);
+const host = '0.0.0.0';
+
+app.use(express.json()); // ✅ Parse JSON bodies
 
 /* ---------- CORS --------------------------------------------------- */
 const allowed = (process.env.CORS_ORIGINS || '')
@@ -24,10 +25,6 @@ app.use(cors({
   credentials: true
 }));
 app.options('*', cors());
-
-app.listen(port, host, () => {
-  console.log(`✅ MODL Relayer listening on http://${host}:${port} (env PORT=${process.env.PORT || 'undefined'})`);
-});
 
 /* ---------- Ethereum ------------------------------------------------ */
 const providerUrl      = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
@@ -64,7 +61,7 @@ app.post('/relay', async (req, res) => {
 });
 
 /* ---------- Start --------------------------------------------------- */
-app.listen(port, '0.0.0.0', () =>
-  console.log(`✅ MODL Relayer listening on :${port}`)
+app.listen(port, host, () =>
+  console.log(`✅ MODL Relayer listening on http://${host}:${port} (env PORT=${process.env.PORT || 'undefined'})`)
 );
 setInterval(() => console.log('⏰ heartbeat'), 60_000);
