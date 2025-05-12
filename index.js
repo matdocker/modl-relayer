@@ -8,15 +8,16 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ✅ CORS: Allow specific domains and handle preflight
+// ✅ CORS: Allow specific origins from .env and handle preflight OPTIONS
 const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map(origin => origin.trim()) || [];
 
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error(`❌ CORS blocked: ${origin}`));
+      console.warn(`⚠️ Blocked by CORS: ${origin}`);
+      callback(new Error(`❌ CORS not allowed for origin: ${origin}`));
     }
   },
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -24,7 +25,9 @@ app.use(cors({
   credentials: true,
 }));
 
-app.options('/relay', cors()); // ✅ Handle preflight for relay path
+// ✅ Explicit OPTIONS handler for preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 
 // ✅ Load environment
@@ -38,7 +41,7 @@ if (!providerUrl || !privateKey || !relayHubAddress || !paymasterAddress) {
   process.exit(1);
 }
 
-// ✅ Load ABI
+// ✅ Load ABI from file
 let relayHubAbi;
 try {
   const abiPath = path.join(__dirname, './abi/MODLRelayHub.json');
@@ -50,7 +53,7 @@ try {
   process.exit(1);
 }
 
-// ✅ Initialize provider/signer/contract
+// ✅ Setup signer + contract
 const provider = new ethers.JsonRpcProvider(providerUrl);
 const wallet = new ethers.Wallet(privateKey, provider);
 const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
@@ -60,26 +63,30 @@ app.get('/health', (_, res) => {
   res.status(200).send('✅ MODL Relayer is healthy');
 });
 
-// ✅ Relay request
+// ✅ Relay request endpoint
 app.post('/relay', async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
   console.log('\n📥 Relay request received');
-  console.log({ paymaster, target, user, gasLimit, encodedData: encodedData?.slice(0, 20) });
+  console.log({
+    paymaster,
+    target,
+    user,
+    gasLimit,
+    encodedData: encodedData?.slice(0, 20) + '...',
+  });
 
-  // Validate request
   if (
     !paymaster || !target || !user ||
     typeof encodedData !== 'string' || !encodedData.startsWith('0x') ||
     typeof gasLimit !== 'number'
   ) {
-    console.error('❌ Invalid request:', req.body);
+    console.error('❌ Invalid relay payload');
     return res.status(400).json({ error: 'Missing or invalid fields' });
   }
 
   try {
-    const buffer = 100_000;
-    const totalGasLimit = gasLimit + buffer;
+    const totalGasLimit = gasLimit + 100_000;
     const { gasPrice } = await provider.getFeeData();
     if (!gasPrice) throw new Error('Gas price unavailable');
 
@@ -104,11 +111,12 @@ app.post('/relay', async (req, res) => {
   }
 });
 
-// ✅ Start server
+// ✅ Server startup
 app.listen(port, () => {
   console.log(`✅ MODL Relayer live at http://localhost:${port}`);
 });
 
+// ✅ Keep-alive logging
 setInterval(() => {
   console.log('⏰ Heartbeat: MODL relayer still alive');
 }, 60_000);
