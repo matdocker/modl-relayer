@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { ethers } = require("ethers");
+const { json } = require("stream/consumers");
 
 const app  = express();
 const port = process.env.PORT || 8080;
@@ -15,10 +16,11 @@ const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+
 console.log("ENV RELAY_HUB_ADDRESS =", JSON.stringify(process.env.RELAY_HUB_ADDRESS));
 const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi, wallet);
 
-console.log("🛡  Using RelayHub proxy:", relayHub.address);
+console.log("🛡  Using RelayHub proxy:", JSON.stringify(relayHub));
 
 // ─── /relay endpoint ─────────────────────────────────────────────────────────
 app.post("/relay", async (req, res) => {
