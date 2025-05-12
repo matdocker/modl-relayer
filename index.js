@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const app  = express();
 const port = parseInt(process.env.PORT || '8080', 10);   // <─ use Railway PORT
+const host = '0.0.0.0';    
 
 /* ---------- CORS --------------------------------------------------- */
 const allowed = (process.env.CORS_ORIGINS || '')
@@ -23,6 +24,10 @@ app.use(cors({
   credentials: true
 }));
 app.options('*', cors());
+
+app.listen(port, host, () => {
+  console.log(`✅ MODL Relayer listening on http://${host}:${port} (env PORT=${process.env.PORT || 'undefined'})`);
+});
 
 /* ---------- Ethereum ------------------------------------------------ */
 const providerUrl      = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
