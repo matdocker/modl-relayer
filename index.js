@@ -8,35 +8,39 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+// ✅ CORS: Allow specific domains (adjust for production)
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://your-frontend-domain.com'], // 👈 whitelist your frontend
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
+
 app.use(express.json());
 
-// ✅ Load env variables
+// ✅ Load environment
 const providerUrl = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
 const privateKey = process.env.PRIVATE_KEY;
 const relayHubAddress = process.env.RELAY_HUB_ADDRESS;
 const paymasterAddress = process.env.PAYMASTER_ADDRESS;
 
-// ✅ Validate env setup
 if (!providerUrl || !privateKey || !relayHubAddress || !paymasterAddress) {
   console.error('❌ Missing .env configuration');
   process.exit(1);
 }
 
-// ✅ Load ABI from ./abi/MODLRelayHub.json
+// ✅ Load ABI
 let relayHubAbi;
 try {
   const abiPath = path.join(__dirname, './abi/MODLRelayHub.json');
   const raw = fs.readFileSync(abiPath, 'utf8');
-  const parsed = JSON.parse(raw);
-  relayHubAbi = parsed.abi;
+  relayHubAbi = JSON.parse(raw).abi;
   console.log('✅ ABI loaded from ./abi/MODLRelayHub.json');
 } catch (err) {
   console.error('❌ Failed to load ABI:', err);
   process.exit(1);
 }
 
-// ✅ Initialize provider and signer
+// ✅ Initialize provider/signer/contract
 const provider = new ethers.JsonRpcProvider(providerUrl);
 const wallet = new ethers.Wallet(privateKey, provider);
 const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
@@ -46,26 +50,20 @@ app.get('/health', (_, res) => {
   res.status(200).send('✅ MODL Relayer is healthy');
 });
 
-// ✅ Relay route
+// ✅ Relay request
 app.post('/relay', async (req, res) => {
-  const {
-    paymaster,
-    target,
-    encodedData,
-    gasLimit,
-    user,
-  } = req.body;
+  const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
-  console.log('\n📥 Incoming relay request:');
-  console.log({ paymaster, target, user, gasLimit, preview: encodedData?.slice(0, 20) });
+  console.log('\n📥 Relay request received');
+  console.log({ paymaster, target, user, gasLimit, encodedData: encodedData?.slice(0, 20) });
 
-  // ✅ Input validation
+  // Validate request
   if (
     !paymaster || !target || !user ||
     typeof encodedData !== 'string' || !encodedData.startsWith('0x') ||
     typeof gasLimit !== 'number'
   ) {
-    console.error('❌ Invalid relay payload:', req.body);
+    console.error('❌ Invalid request:', req.body);
     return res.status(400).json({ error: 'Missing or invalid fields' });
   }
 
@@ -75,7 +73,7 @@ app.post('/relay', async (req, res) => {
     const { gasPrice } = await provider.getFeeData();
     if (!gasPrice) throw new Error('Gas price unavailable');
 
-    console.log(`🔧 Executing relayCall → ${relayHubAddress}`);
+    console.log(`🔧 Calling relayCall → ${relayHubAddress}`);
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
       gasLimit: totalGasLimit,
       gasPrice,
@@ -83,8 +81,8 @@ app.post('/relay', async (req, res) => {
 
     console.log(`🚀 relayCall tx sent: ${tx.hash}`);
     await tx.wait();
-
-    return res.json({ txHash: tx.hash });
+    console.log('✅ relayCall confirmed');
+    res.json({ txHash: tx.hash });
   } catch (err) {
     console.error('❌ relayCall failed:', {
       message: err.message,
@@ -92,18 +90,15 @@ app.post('/relay', async (req, res) => {
       code: err.code,
       data: err.data,
     });
-
-    return res.status(500).json({
-      error: err.message || 'Relay failed',
-    });
+    res.status(500).json({ error: err.message || 'Relay failed' });
   }
 });
 
-// ✅ Server start
+// ✅ Start server
 app.listen(port, () => {
-  console.log(`✅ MODL Relayer is live at http://localhost:${port}`);
+  console.log(`✅ MODL Relayer live at http://localhost:${port}`);
 });
 
 setInterval(() => {
-  console.log('⏰ MODL Relayer heartbeat – alive');
+  console.log('⏰ Heartbeat: MODL relayer still alive');
 }, 60_000);
