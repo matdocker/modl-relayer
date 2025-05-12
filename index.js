@@ -1,67 +1,43 @@
-const express = require('express');
-const cors    = require('cors');
-const { ethers } = require('ethers');
-const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+// index.js
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const { ethers } = require("ethers");
+const app = express();
+const port = process.env.PORT || 8080;
 
-const app  = express();
-const port = parseInt(process.env.PORT || '8080', 10);
-const host = '0.0.0.0';
+app.use(cors());
+app.use(express.json());
 
-app.use(express.json()); // ✅ Parse JSON bodies
+// Load MODLRelayHub ABI
+const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
 
-/* ---------- CORS --------------------------------------------------- */
-const allowed = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi, wallet);
 
-app.use(cors({
-  origin: (origin, cb) => (!origin || allowed.includes(origin)) ? cb(null, true)
-                                                               : cb(new Error(`Blocked by CORS: ${origin}`)),
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-  credentials: true
-}));
-app.options('*', cors());
-
-/* ---------- Ethereum ------------------------------------------------ */
-const providerUrl      = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
-const privateKey       = process.env.PRIVATE_KEY;
-const relayHubAddress  = process.env.RELAY_HUB_ADDRESS;
-if (!providerUrl || !privateKey || !relayHubAddress) {
-  console.error('Missing env vars'); process.exit(1);
-}
-const abi = JSON.parse(fs.readFileSync(path.join(__dirname,'abi/MODLRelayHub.json'))).abi;
-
-const provider  = new ethers.JsonRpcProvider(providerUrl);
-const wallet    = new ethers.Wallet(privateKey, provider);
-const relayHub  = new ethers.Contract(relayHubAddress, abi, wallet);
-
-/* ---------- Routes -------------------------------------------------- */
-app.get('/health', (_, res) => res.send('✅ MODL Relayer is healthy'));
-
-app.post('/relay', async (req, res) => {
+app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
-  if (!paymaster || !target || !user || typeof encodedData !== 'string' || !encodedData.startsWith('0x') || typeof gasLimit !== 'number') {
-    return res.status(400).json({ error: 'Bad payload' });
+  if (!paymaster || !target || !encodedData || !gasLimit || !user) {
+    return res.status(400).json({ error: "Missing required fields" });
   }
+
   try {
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
       gasLimit: gasLimit + 100_000,
-      gasPrice: (await provider.getFeeData()).gasPrice
+      gasPrice: (await provider.getFeeData()).gasPrice,
     });
+
+    console.log("⛽ Relay tx sent:", tx.hash);
     await tx.wait();
+
     res.json({ txHash: tx.hash });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message || 'Relay failed' });
+  } catch (err) {
+    console.error("❌ Relay failed:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ---------- Start --------------------------------------------------- */
-app.listen(port, host, () =>
-  console.log(`✅ MODL Relayer listening on http://${host}:${port} (env PORT=${process.env.PORT || 'undefined'})`)
-);
-setInterval(() => console.log('⏰ heartbeat'), 60_000);
+app.listen(port, () => {
+  console.log(`✅ MODL Relayer running on http://localhost:${port}`);
+});
