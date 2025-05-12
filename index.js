@@ -24,6 +24,12 @@ console.log("🛡  Using RelayHub proxy:", relayHub.target);
 // Optional: preload DeploymentManager contract interface for log decoding
 const deploymentManagerInterface = new ethers.Interface(deploymentManagerAbi);
 
+
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
+
 // ─── /relay endpoint ─────────────────────────────────────────────────────────
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
