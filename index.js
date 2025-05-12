@@ -51,8 +51,9 @@ app.post("/relay", async (req, res) => {
       );
       console.log("✅ callStatic passed – proceeding to send tx");
     } catch (simErr) {
-      console.error("❌ callStatic revert reason:", simErr.reason || simErr.shortMessage);
-      return res.status(500).json({ error: simErr.reason || "callStatic reverted" });
+      const reason = simErr?.reason || simErr?.shortMessage || JSON.stringify(simErr);
+      console.error("❌ callStatic failed:", reason);
+      return res.status(500).json({ error: reason });
     }
 
     // 2️⃣ Broadcast tx
