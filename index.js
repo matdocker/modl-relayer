@@ -24,7 +24,7 @@ app.post("/relay", async (req, res) => {
   }
 
   try {
-    console.log("\n📦 Incoming relay request:");
+    console.log("📦 Incoming relay request:");
     console.log("  → Paymaster:", paymaster);
     console.log("  → Target:", target);
     console.log("  → EncodedData:", encodedData);
@@ -33,23 +33,29 @@ app.post("/relay", async (req, res) => {
 
     const feeData = await provider.getFeeData();
 
-    const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
-      gasLimit: ethers.BigNumber.from(gasLimit).add(100_000),
-      gasPrice: feeData.gasPrice ?? undefined,
+    const txRequest = await relayHub.relayCall.populateTransaction(
+      paymaster,
+      target,
+      encodedData,
+      gasLimit
+    );
+
+    const tx = await wallet.sendTransaction({
+      ...txRequest,
+      gasLimit: gasLimit + 100000,
+      gasPrice: feeData.gasPrice,
     });
 
     console.log("⛽ Relay tx sent:", tx.hash);
     const receipt = await tx.wait();
-
-    if (receipt.status !== 1) {
-      throw new Error("Transaction reverted");
-    }
+    console.log("📬 Tx mined:", receipt.transactionHash);
 
     res.json({ txHash: tx.hash });
   } catch (err) {
     console.error("❌ Relay failed:", err);
-    res.status(500).json({ error: err.message || "Unknown error" });
+    res.status(500).json({ error: err?.message || "Relay error" });
   }
+
 });
 
 app.listen(port, () => {
