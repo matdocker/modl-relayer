@@ -1,13 +1,13 @@
 const express = require('express');
-const cors = require('cors');  // ✅ ADD CORS
+const cors = require('cors');
 const { ethers } = require('ethers');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());  // ✅ ENABLE CORS
-app.use(express.json()); // ✅ Parse JSON
+app.use(cors());
+app.use(express.json());
 
 const providerUrl = `${process.env.RPC_URL}/${process.env.THIRDWEB_API_KEY}`;
 const privateKey = process.env.PRIVATE_KEY;
@@ -23,21 +23,22 @@ const provider = new ethers.JsonRpcProvider(providerUrl);
 const wallet = new ethers.Wallet(privateKey, provider);
 
 const relayHubAbi = [
-  'function relayCall(address paymaster, address target, bytes data, uint256 gasLimit) external',
+  'function relayCall(address paymaster, address target, bytes data, uint256 gasLimit) external'
 ];
+
 const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
 
-// ✅ Health check endpoint
-app.get('/health', (req, res) => {
+// ✅ Health check
+app.get('/health', (_, res) => {
   res.status(200).send('✅ MODL Relayer is healthy');
 });
 
-// ✅ Relay endpoint with validation & debug logs
+// ✅ Relay endpoint
 app.post('/relay', async (req, res) => {
   const {
     paymaster,
     target,
-    encodedData, // ✅ now consistent
+    encodedData,
     gasLimit,
     user,
   } = req.body;
@@ -50,47 +51,47 @@ app.post('/relay', async (req, res) => {
     !encodedData.startsWith('0x') ||
     typeof gasLimit !== 'number'
   ) {
-    console.error('❌ Invalid relay request body:', req.body);
-    return res.status(400).json({ error: '❌ Missing or invalid required fields' });
+    console.error('❌ Invalid relay request:', req.body);
+    return res.status(400).json({ error: 'Missing or invalid fields' });
   }
 
-  console.log('📥 Incoming relay request:', {
+  console.log('📨 Relayer Request Payload:', {
     paymaster,
     target,
-    user,
     gasLimit,
-    data: encodedData.slice(0, 10) + '...',
+    user,
+    preview: encodedData.slice(0, 10) + '...'
   });
 
   try {
-    // 🛠️ FIXED: use `encodedData`, not undefined `data`
+    const gasEstimate = gasLimit + 100_000;
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
-      gasLimit: gasLimit + 100000,
+      gasLimit: gasEstimate,
+      gasPrice: await provider.getGasPrice(),
     });
 
-    console.log(`🚀 Relayed tx submitted: ${tx.hash}`);
+    console.log(`🚀 relayCall() tx sent: ${tx.hash}`);
     await tx.wait();
     return res.json({ txHash: tx.hash });
-  } catch (error) {
-    console.error('❌ Relay error:', {
-      message: error.message,
-      reason: error.reason,
-      data: error.data,
+  } catch (err) {
+    console.error('❌ relayCall() failed:', {
+      message: err.message,
+      reason: err.reason,
+      code: err.code,
+      data: err.data,
     });
 
     return res.status(500).json({
-      error: error.message || 'Relay failed',
+      error: err.message || 'Relay failed',
     });
   }
 });
 
-
-// ✅ Start server
+// ✅ Heartbeat
 app.listen(port, () => {
   console.log(`✅ MODL Relayer running on port ${port}`);
 });
 
-// ✅ Periodic heartbeat
 setInterval(() => {
-  console.log('⏰ MODL Relayer heartbeat - still alive');
-}, 60 * 1000);
+  console.log('⏰ Heartbeat: MODL relayer still alive');
+}, 60_000);
