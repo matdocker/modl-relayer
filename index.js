@@ -24,7 +24,7 @@ app.post("/relay", async (req, res) => {
   }
 
   try {
-    console.log("📦 Incoming relay request:");
+    console.log("\n📦 Incoming relay request:");
     console.log("  → Paymaster:", paymaster);
     console.log("  → Target:", target);
     console.log("  → EncodedData:", encodedData);
@@ -32,21 +32,25 @@ app.post("/relay", async (req, res) => {
     console.log("  → User:", user);
 
     const feeData = await provider.getFeeData();
+
     const tx = await relayHub.relayCall(paymaster, target, encodedData, gasLimit, {
-      gasLimit: gasLimit + 100_000,
-      gasPrice: feeData.gasPrice,
+      gasLimit: ethers.BigNumber.from(gasLimit).add(100_000),
+      gasPrice: feeData.gasPrice ?? undefined,
     });
 
     console.log("⛽ Relay tx sent:", tx.hash);
-    await tx.wait();
+    const receipt = await tx.wait();
+
+    if (receipt.status !== 1) {
+      throw new Error("Transaction reverted");
+    }
 
     res.json({ txHash: tx.hash });
   } catch (err) {
     console.error("❌ Relay failed:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Unknown error" });
   }
 });
-
 
 app.listen(port, () => {
   console.log(`✅ MODL Relayer running on http://localhost:${port}`);
