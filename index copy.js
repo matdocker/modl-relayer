@@ -44,7 +44,7 @@ app.post("/relay", async (req, res) => {
 
     // 1️⃣ Simulate with callStatic
     try {
-      await relayHub.relayCall(
+      await relayHub.callStatic.relayCall(
         paymaster,
         target,
         dataWithUser,
