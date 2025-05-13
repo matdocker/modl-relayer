@@ -78,7 +78,14 @@ app.post("/relay", async (req, res) => {
       }
     }
 
-    res.json({ txHash: receipt.transactionHash });
+    if (!receipt?.transactionHash) {
+      console.error("❌ Missing txHash in receipt:", receipt);
+      return res.status(500).json({ error: "Transaction sent but missing hash." });
+    }
+
+    console.log("📬 Responding with txHash:", receipt.transactionHash);
+    res.status(200).json({ txHash: receipt.transactionHash });
+        
   } catch (err) {
     console.error("❌ Relay failed (outer):");
     console.dir(err, { depth: null });
