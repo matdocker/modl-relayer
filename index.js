@@ -18,7 +18,7 @@ const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 console.log("ENV RELAY_HUB_ADDRESS =", JSON.stringify(process.env.RELAY_HUB_ADDRESS));
-const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi, wallet);
+const relayHub = new ethers.Contract(process.env.RELAY_HUB_ADDRESS, relayHubAbi).connect(wallet);
 console.log("🛡  Using RelayHub proxy:", relayHub.target);
 
 const deploymentManagerInterface = new ethers.Interface(deploymentManagerAbi);
@@ -39,34 +39,11 @@ app.post("/relay", async (req, res) => {
     console.log("\n📦 Incoming relay request");
     console.table({ paymaster, target, gasLimit, user, encodedData });
 
+    // Append user address (ERC-2771-style)
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
-    const dataWithUser = encodedData + userBytes.slice(2); // remove 0x
+    const dataWithUser = encodedData + userBytes.slice(2); // drop "0x"
 
-    // 1️⃣ Simulate with callStatic
-    try {
-      await relayHub.relayCall(
-        paymaster,
-        target,
-        dataWithUser,
-        gasLimit,
-        user,
-        { from: wallet.address }
-      );
-      console.log("✅ callStatic passed – proceeding to send tx");
-    } catch (simErr) {
-      const fallbackReason =
-        simErr?.error?.data?.message ||
-        simErr?.reason ||
-        simErr?.shortMessage ||
-        JSON.stringify(simErr);
-
-      console.error("❌ callStatic failed:");
-      console.dir(simErr, { depth: null });
-
-      return res.status(500).json({ error: fallbackReason });
-    }
-
-    // 2️⃣ Send transaction
+    // Send transaction
     const feeData = await provider.getFeeData();
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
@@ -89,7 +66,7 @@ app.post("/relay", async (req, res) => {
 
     console.log("📬 Tx mined:", receipt.transactionHash);
 
-    // 3️⃣ Optional: Look for logs like DebugMsgSender
+    // Look for DebugMsgSender logs
     for (const log of receipt.logs) {
       try {
         const parsed = deploymentManagerInterface.parseLog(log);
@@ -97,7 +74,7 @@ app.post("/relay", async (req, res) => {
           console.log("🪵 DebugMsgSender:", parsed.args);
         }
       } catch {
-        // Ignore logs that don’t match the interface
+        // Ignore unrelated logs
       }
     }
 
