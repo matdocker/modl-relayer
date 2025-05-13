@@ -64,7 +64,7 @@ app.post("/relay", async (req, res) => {
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error("Transaction reverted on-chain");
 
-    console.log("📬 Tx mined:", receipt.transactionHash);
+    console.log("📬 Tx mined:", tx.hash);
 
     // Look for DebugMsgSender logs
     for (const log of receipt.logs) {
