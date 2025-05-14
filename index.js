@@ -43,23 +43,21 @@ app.post("/relay", async (req, res) => {
     console.table({ paymaster, target, gasLimit, user, encodedData });
 
     // 🔧 Step 1: Encode user for ERC-2771
-    console.log("🔧 Encoding user address for calldata...");
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
-    const dataWithUser = encodedData + userBytes.slice(2); // Remove 0x
+    const dataWithUser = encodedData + userBytes.slice(2);
     console.log("📌 dataWithUser =", dataWithUser);
 
     // 🔍 Step 2: Simulate callStatic to catch on-chain errors early
     try {
       console.log("🔍 Simulating relayCall via callStatic...");
 
-      // ⚠️ Use a provider-connected contract for callStatic
       const relayHubStatic = new ethers.Contract(
-        relayHub.target,        // proxy address
-        relayHub.interface,     // reuse ABI
-        provider                // connected to provider, not wallet
+        relayHub.target,
+        relayHub.interface,
+        provider
       );
 
-      const staticResult = await relayHubStatic.callStatic.relayCall(
+      const result = await relayHubStatic.callStatic.relayCall(
         paymaster,
         target,
         dataWithUser,
@@ -67,23 +65,31 @@ app.post("/relay", async (req, res) => {
         user
       );
 
-      console.log("✅ callStatic.relayCall succeeded:", staticResult);
+      console.log("✅ callStatic.relayCall succeeded:", result);
     } catch (staticErr) {
       console.error("❌ callStatic.relayCall failed:");
       console.dir(staticErr, { depth: null });
+
+      let decodedReason = staticErr?.reason || staticErr?.message;
+
+      // Try to decode custom revert reason
+      if (staticErr?.data) {
+        try {
+          const parsed = relayHub.interface.parseError(staticErr.data);
+          console.log("🔎 Decoded revert reason:", parsed.name, parsed.args);
+          decodedReason = `${parsed.name}(${parsed.args.map(String).join(", ")})`;
+        } catch {
+          console.warn("⚠️ Failed to decode revert reason from staticErr.data");
+        }
+      }
+
       return res.status(500).json({
-        error: staticErr?.reason || staticErr?.message || "relayCall() reverted in simulation",
+        error: decodedReason || "relayCall() reverted in simulation",
       });
     }
 
     // ⚙️ Step 3: Build transaction request
-    console.log("🛠 Building transaction from relayHub...");
-    console.log("🛠 Using relayHub at:", relayHub.target);
-    console.log("🛠 Using paymaster at:", paymaster);
-    console.log("🛠 Using target at:", target);
-    console.log("🛠 Using user at:", user);
     const feeData = await provider.getFeeData();
-    console.log("⚙️ feeData.gasPrice =", feeData.gasPrice?.toString());
 
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
@@ -95,7 +101,6 @@ app.post("/relay", async (req, res) => {
     console.log("🧾 txReq populated:", txReq);
 
     // 🚀 Step 4: Send transaction
-    console.log("🚀 Sending transaction...");
     const tx = await wallet.sendTransaction({
       ...txReq,
       gasLimit: Number(gasLimit) + 100_000,
@@ -107,12 +112,13 @@ app.post("/relay", async (req, res) => {
     // ⏳ Step 5: Wait for mining
     const receipt = await tx.wait();
     console.log("📬 Tx mined:", tx.hash);
+
     if (receipt.status !== 1) {
       console.error("❌ Transaction reverted on-chain:", receipt);
       throw new Error("Transaction reverted on-chain");
     }
 
-    // 🔍 Step 6: Log any decoded events
+    // 🔍 Step 6: Decode any logs
     for (const log of receipt.logs) {
       try {
         const parsed = deploymentManagerInterface.parseLog(log);
@@ -124,7 +130,6 @@ app.post("/relay", async (req, res) => {
       }
     }
 
-    // ✅ Step 7: Return txHash
     const txHash = receipt?.hash || receipt?.transactionHash;
     if (!txHash) {
       console.error("❌ Missing txHash in receipt:", receipt);
@@ -138,11 +143,24 @@ app.post("/relay", async (req, res) => {
     console.error("❌ Relay failed (outer):");
     console.dir(err, { depth: null });
 
+    let decodedReason = err?.reason || err?.message;
+
+    if (err?.data) {
+      try {
+        const parsed = relayHub.interface.parseError(err.data);
+        console.log("🔎 Decoded outer revert reason:", parsed.name, parsed.args);
+        decodedReason = `${parsed.name}(${parsed.args.map(String).join(", ")})`;
+      } catch {
+        console.warn("⚠️ Failed to decode outer revert reason");
+      }
+    }
+
     res.status(500).json({
-      error: err?.error?.message || err?.reason || err?.message || "Relay error",
+      error: decodedReason || "Relay error",
     });
   }
 });
+
 
 
 
