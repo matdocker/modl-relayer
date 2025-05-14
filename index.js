@@ -51,13 +51,22 @@ app.post("/relay", async (req, res) => {
     // 🔍 Step 2: Simulate callStatic to catch on-chain errors early
     try {
       console.log("🔍 Simulating relayCall via callStatic...");
-      const staticResult = await relayHub.callStatic.relayCall(
+
+      // ⚠️ Use a provider-connected contract for callStatic
+      const relayHubStatic = new ethers.Contract(
+        relayHub.target,        // proxy address
+        relayHub.interface,     // reuse ABI
+        provider                // connected to provider, not wallet
+      );
+
+      const staticResult = await relayHubStatic.callStatic.relayCall(
         paymaster,
         target,
         dataWithUser,
         gasLimit,
         user
       );
+
       console.log("✅ callStatic.relayCall succeeded:", staticResult);
     } catch (staticErr) {
       console.error("❌ callStatic.relayCall failed:");
@@ -134,6 +143,7 @@ app.post("/relay", async (req, res) => {
     });
   }
 });
+
 
 
 
