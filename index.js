@@ -31,7 +31,10 @@ app.get("/health", (req, res) => {
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
+  console.log("🛰️ /relay endpoint hit");
+
   if (!paymaster || !target || !encodedData || !gasLimit || !user) {
+    console.warn("⚠️ Missing fields in request body");
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -39,34 +42,40 @@ app.post("/relay", async (req, res) => {
     console.log("\n📦 Incoming relay request");
     console.table({ paymaster, target, gasLimit, user, encodedData });
 
-    // Append user address (ERC-2771-style)
+    // 🔧 Step 1: Encode user for ERC-2771
+    console.log("🔧 Encoding user address for calldata...");
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
-    const dataWithUser = encodedData + userBytes.slice(2); // remove '0x'
+    const dataWithUser = encodedData + userBytes.slice(2); // Remove 0x
+    console.log("📌 dataWithUser =", dataWithUser);
 
-    // ⏳ Optional: CallStatic first to simulate
-    // try {
-    //   const staticResult = await relayHub.callStatic.relayCall(
-    //     paymaster,
-    //     target,
-    //     dataWithUser,
-    //     gasLimit,
-    //     user
-    //   );
-    //   console.log("✅ callStatic.relayCall success:", staticResult);
-    // } catch (staticErr) {
-    //   console.error("❌ callStatic.relayCall failed:", staticErr.reason || staticErr.message || staticErr);
-    //   return res.status(500).json({
-    //     error: staticErr.reason || staticErr.message || "callStatic.relayCall failed",
-    //   });
-    // }
+    // 🔍 Step 2: Simulate callStatic to catch on-chain errors early
+    try {
+      console.log("🔍 Simulating relayCall via callStatic...");
+      const staticResult = await relayHub.callStatic.relayCall(
+        paymaster,
+        target,
+        dataWithUser,
+        gasLimit,
+        user
+      );
+      console.log("✅ callStatic.relayCall succeeded:", staticResult);
+    } catch (staticErr) {
+      console.error("❌ callStatic.relayCall failed:");
+      console.dir(staticErr, { depth: null });
+      return res.status(500).json({
+        error: staticErr?.reason || staticErr?.message || "relayCall() reverted in simulation",
+      });
+    }
 
-    // 🛰 Send transaction
+    // ⚙️ Step 3: Build transaction request
+    console.log("🛠 Building transaction from relayHub...");
     console.log("🛠 Using relayHub at:", relayHub.target);
-    console.log("🛠 Using Paymaster at:", JSON.stringify(paymaster));
-
-
-    
+    console.log("🛠 Using paymaster at:", paymaster);
+    console.log("🛠 Using target at:", target);
+    console.log("🛠 Using user at:", user);
     const feeData = await provider.getFeeData();
+    console.log("⚙️ feeData.gasPrice =", feeData.gasPrice?.toString());
+
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
       target,
@@ -74,7 +83,10 @@ app.post("/relay", async (req, res) => {
       gasLimit,
       user
     );
+    console.log("🧾 txReq populated:", txReq);
 
+    // 🚀 Step 4: Send transaction
+    console.log("🚀 Sending transaction...");
     const tx = await wallet.sendTransaction({
       ...txReq,
       gasLimit: Number(gasLimit) + 100_000,
@@ -83,12 +95,15 @@ app.post("/relay", async (req, res) => {
 
     console.log("⛽ Relay tx broadcast:", tx.hash);
 
+    // ⏳ Step 5: Wait for mining
     const receipt = await tx.wait();
-    if (receipt.status !== 1) throw new Error("Transaction reverted on-chain");
-
     console.log("📬 Tx mined:", tx.hash);
+    if (receipt.status !== 1) {
+      console.error("❌ Transaction reverted on-chain:", receipt);
+      throw new Error("Transaction reverted on-chain");
+    }
 
-    // 🔍 Debug logs
+    // 🔍 Step 6: Log any decoded events
     for (const log of receipt.logs) {
       try {
         const parsed = deploymentManagerInterface.parseLog(log);
@@ -96,17 +111,18 @@ app.post("/relay", async (req, res) => {
           console.log("🪵 DebugMsgSender:", parsed.args);
         }
       } catch {
-        // Ignore unrelated logs
+        // ignore unrelated logs
       }
     }
 
+    // ✅ Step 7: Return txHash
     const txHash = receipt?.hash || receipt?.transactionHash;
     if (!txHash) {
       console.error("❌ Missing txHash in receipt:", receipt);
       return res.status(500).json({ error: "Transaction sent but missing hash." });
     }
 
-    console.log("📬 Responding with txHash:", txHash);
+    console.log("✅ Responding with txHash:", txHash);
     res.status(200).json({ txHash });
 
   } catch (err) {
@@ -118,6 +134,7 @@ app.post("/relay", async (req, res) => {
     });
   }
 });
+
 
 
 app.listen(port, () => {
