@@ -44,21 +44,21 @@ app.post("/relay", async (req, res) => {
     const dataWithUser = encodedData + userBytes.slice(2); // remove '0x'
 
     // ⏳ Optional: CallStatic first to simulate
-    try {
-      const staticResult = await relayHub.callStatic.relayCall(
-        paymaster,
-        target,
-        dataWithUser,
-        gasLimit,
-        user
-      );
-      console.log("✅ callStatic.relayCall success:", staticResult);
-    } catch (staticErr) {
-      console.error("❌ callStatic.relayCall failed:", staticErr.reason || staticErr.message || staticErr);
-      return res.status(500).json({
-        error: staticErr.reason || staticErr.message || "callStatic.relayCall failed",
-      });
-    }
+    // try {
+    //   const staticResult = await relayHub.callStatic.relayCall(
+    //     paymaster,
+    //     target,
+    //     dataWithUser,
+    //     gasLimit,
+    //     user
+    //   );
+    //   console.log("✅ callStatic.relayCall success:", staticResult);
+    // } catch (staticErr) {
+    //   console.error("❌ callStatic.relayCall failed:", staticErr.reason || staticErr.message || staticErr);
+    //   return res.status(500).json({
+    //     error: staticErr.reason || staticErr.message || "callStatic.relayCall failed",
+    //   });
+    // }
 
     // 🛰 Send transaction
     const feeData = await provider.getFeeData();
