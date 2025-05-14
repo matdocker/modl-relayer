@@ -53,7 +53,7 @@ app.post("/relay", async (req, res) => {
 
       const relayHubStatic = new ethers.Contract(
         relayHub.target,
-        relayHub.interface,
+        relayHubAbi, // ← this is the correct ABI
         provider
       );
 
