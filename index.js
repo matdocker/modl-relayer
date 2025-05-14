@@ -41,9 +41,26 @@ app.post("/relay", async (req, res) => {
 
     // Append user address (ERC-2771-style)
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
-    const dataWithUser = encodedData + userBytes.slice(2); // drop "0x"
+    const dataWithUser = encodedData + userBytes.slice(2); // remove '0x'
 
-    // Send transaction
+    // ⏳ Optional: CallStatic first to simulate
+    try {
+      const staticResult = await relayHub.callStatic.relayCall(
+        paymaster,
+        target,
+        dataWithUser,
+        gasLimit,
+        user
+      );
+      console.log("✅ callStatic.relayCall success:", staticResult);
+    } catch (staticErr) {
+      console.error("❌ callStatic.relayCall failed:", staticErr.reason || staticErr.message || staticErr);
+      return res.status(500).json({
+        error: staticErr.reason || staticErr.message || "callStatic.relayCall failed",
+      });
+    }
+
+    // 🛰 Send transaction
     const feeData = await provider.getFeeData();
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
@@ -66,7 +83,7 @@ app.post("/relay", async (req, res) => {
 
     console.log("📬 Tx mined:", tx.hash);
 
-    // Look for DebugMsgSender logs
+    // 🔍 Debug logs
     for (const log of receipt.logs) {
       try {
         const parsed = deploymentManagerInterface.parseLog(log);
@@ -79,7 +96,6 @@ app.post("/relay", async (req, res) => {
     }
 
     const txHash = receipt?.hash || receipt?.transactionHash;
-
     if (!txHash) {
       console.error("❌ Missing txHash in receipt:", receipt);
       return res.status(500).json({ error: "Transaction sent but missing hash." });
@@ -87,7 +103,7 @@ app.post("/relay", async (req, res) => {
 
     console.log("📬 Responding with txHash:", txHash);
     res.status(200).json({ txHash });
-    
+
   } catch (err) {
     console.error("❌ Relay failed (outer):");
     console.dir(err, { depth: null });
@@ -97,6 +113,7 @@ app.post("/relay", async (req, res) => {
     });
   }
 });
+
 
 app.listen(port, () => {
   console.log(`✅ MODL Relayer listening on http://localhost:${port}`);
