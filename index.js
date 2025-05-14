@@ -61,6 +61,11 @@ app.post("/relay", async (req, res) => {
     // }
 
     // 🛰 Send transaction
+    console.log("🛠 Using relayHub at:", relayHub.target);
+    console.log("🛠 Using Paymaster at:", JSON.stringify(paymaster));
+
+
+    
     const feeData = await provider.getFeeData();
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
