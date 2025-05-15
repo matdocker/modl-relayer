@@ -13,6 +13,8 @@ app.use(express.json());
 // ─── Contract setup ──────────────────────────────────────────────────────────
 const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
 const deploymentManagerAbi = require("./abi/DeploymentManager.json").abi;
+const paymasterJson =  require('../abi/MODLPaymaster.sol/MODLPaymaster.json'); // adjust path as needed
+const paymasterAbi = paymasterJson.abi;
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
