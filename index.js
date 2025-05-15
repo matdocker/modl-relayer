@@ -30,7 +30,7 @@ if (!process.env.RELAY_HUB_ADDRESS) {
 }
 
 const relayHub = new ethers.Contract(
-relayHubAddress,
+  relayHubAddress,
   relayHubAbi,
   wallet
 );
