@@ -23,9 +23,9 @@ const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const relayerAddress = wallet.address;
 
-const relayHubAddress = process.env.RELAY_HUB_ADDRESS;
-const deploymentManagerAddress = process.env.DEPLOYMENT_MANAGER_ADDRESS;
-const modlPaymasterAddress = process.env.MODL_PAYMASTER_ADDRESS;
+const relayHubAddress = "0x2422d7712e858582D9CE8286AB38ab5Ec62f532A";
+const deploymentManagerAddress = '0xBC7e41034c028724de34C7AeE97De6758fae8761';
+const modlPaymasterAddress = "0xf4782DcfFEE16013bFc0337901167c9D44C687fA";
 
 // ─── Validations ─────────────────────────────────────────────────────────────
 if (!relayHubAddress || !deploymentManagerAddress || !modlPaymasterAddress) {
