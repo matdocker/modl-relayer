@@ -30,6 +30,7 @@ const modlPaymasterAddress = process.env.MODL_PAYMASTER_ADDRESS;
 // ─── Validations ─────────────────────────────────────────────────────────────
 if (!relayHubAddress || !deploymentManagerAddress || !modlPaymasterAddress) {
   console.error("❌ Missing critical env vars: RELAY_HUB_ADDRESS, DEPLOYMENT_MANAGER_ADDRESS, MODL_PAYMASTER_ADDRESS");
+  console.error("relayHubAddress:",relayHubAddress,"deploymentManagerAddress:",deploymentManagerAddress, "modlPaymasterAddress:",modlPaymasterAddress)
   process.exit(1);
 }
 
