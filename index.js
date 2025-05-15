@@ -21,6 +21,14 @@ const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const relayerAddress = wallet.address;
 const relayHubAddress = process.env.RELAY_HUB_ADDRESS
 
+console.error("❌ RELAY_HUB_ADDRESS:", process.env.RELAY_HUB_ADDRESS);
+
+
+if (!process.env.RELAY_HUB_ADDRESS) {
+  console.error("❌ RELAY_HUB_ADDRESS is missing or undefined", process.env.RELAY_HUB_ADDRESS);
+  process.exit(1);
+}
+
 const relayHub = new ethers.Contract(
 relayHubAddress,
   relayHubAbi,
