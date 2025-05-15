@@ -22,7 +22,7 @@ const relayerAddress = wallet.address;
 const relayHubAddress = process.env.RELAY_HUB_ADDRESS
 
 console.error("❌ RELAY_HUB_ADDRESS:", process.env.RELAY_HUB_ADDRESS);
-
+console.error("❌ RELAY_HUB_ABI:", JSON.stringify(paymasterAbi));
 
 if (!process.env.RELAY_HUB_ADDRESS) {
   console.error("❌ RELAY_HUB_ADDRESS is missing or undefined", process.env.RELAY_HUB_ADDRESS);
