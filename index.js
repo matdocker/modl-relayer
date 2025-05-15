@@ -1,4 +1,3 @@
-// index.js
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -10,40 +9,33 @@ const port = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
-// ─── Contract setup ──────────────────────────────────────────────────────────
-const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
-const deploymentManagerAbi = require("./abi/DeploymentManager.json").abi;
-const paymasterJson = require("./abi/MODLPaymaster.json").abi;
-const paymasterAbi = paymasterJson;
+// ─── Load Contracts and ABI ──────────────────────────────────────────────────
+const relayHubJson = require("./abi/MODLRelayHub.json");
+const relayHubAbi = relayHubJson.abi;
+
+const deploymentManagerJson = require("./abi/DeploymentManager.json");
+const deploymentManagerAbi = deploymentManagerJson.abi;
+
+const paymasterJson = require("./abi/MODLPaymaster.json");
+const paymasterAbi = paymasterJson.abi;
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const relayerAddress = wallet.address;
-const relayHubAddress = process.env.RELAY_HUB_ADDRESS
 
-console.error(" RELAY_HUB_ADDRESS:", process.env.RELAY_HUB_ADDRESS);
-console.error(" RELAY_HUB_ABI:", JSON.stringify(relayHubAbi));
-console.error(" Wallet:", wallet);
+const relayHubAddress = process.env.RELAY_HUB_ADDRESS;
+const deploymentManagerAddress = process.env.DEPLOYMENT_MANAGER_ADDRESS;
+const modlPaymasterAddress = process.env.MODL_PAYMASTER_ADDRESS;
 
-if (!process.env.RELAY_HUB_ADDRESS) {
-  console.error("❌ RELAY_HUB_ADDRESS is missing or undefined", process.env.RELAY_HUB_ADDRESS);
+// ─── Validations ─────────────────────────────────────────────────────────────
+if (!relayHubAddress || !deploymentManagerAddress || !modlPaymasterAddress) {
+  console.error("❌ Missing critical env vars: RELAY_HUB_ADDRESS, DEPLOYMENT_MANAGER_ADDRESS, MODL_PAYMASTER_ADDRESS");
   process.exit(1);
 }
 
-const relayHub = new ethers.Contract(
-  relayHubAddress,
-  relayHubAbi,
-  wallet
-);
-console.log("🛡  Using RelayHub proxy at:", relayHub.address);
-
-const deploymentManagerAddress = process.env.DEPLOYMENT_MANAGER_ADDRESS;
-const deploymentManager = new ethers.Contract(
-  deploymentManagerAddress,
-  deploymentManagerAbi,
-  provider
-);
-
+// ─── Instantiate Contracts ───────────────────────────────────────────────────
+const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
+const deploymentManager = new ethers.Contract(deploymentManagerAddress, deploymentManagerAbi, provider);
 const deploymentManagerInterface = new ethers.Interface(deploymentManagerAbi);
 
 // ─── Health Check ────────────────────────────────────────────────────────────
@@ -58,7 +50,6 @@ app.post("/relay", async (req, res) => {
   console.log("🚀 /relay endpoint hit");
 
   if (!paymaster || !target || !encodedData || !gasLimit || !user) {
-    console.warn("⚠️ Missing fields in request body");
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -67,49 +58,48 @@ app.post("/relay", async (req, res) => {
 
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
     const dataWithUser = encodedData + userBytes.slice(2);
-    console.log("📌 dataWithUser =", dataWithUser);
 
     const paymasterContract = new ethers.Contract(paymaster, paymasterAbi, provider);
 
-    // 1. Verify relayer status (optional)
+    // 1. Relayer Status (optional)
     try {
       const relayerInfo = await relayHub.getRelayWorkerInfo.staticCall(relayerAddress);
       console.log("🔐 Relayer is trusted/staked:", relayerInfo);
     } catch {
-      console.warn("⚠️ getRelayWorkerInfo not implemented — skipping relayer staking check");
+      console.warn("⚠️ getRelayWorkerInfo not implemented — skipping check");
     }
 
-    // 2. Check Paymaster deposit
+    // 2. Paymaster deposit
     try {
       const deposit = await relayHub.deposits(paymaster);
       console.log("💰 Paymaster deposit:", ethers.formatEther(deposit), "ETH");
-
-      if (deposit < ethers.parseEther("0.01")) {
-        console.warn("⚠️ Low Paymaster balance — top up recommended");
-      }
     } catch {
-      console.warn("⚠️ Could not fetch Paymaster deposit — check if deposits mapping is public");
+      console.warn("⚠️ Could not fetch Paymaster deposit");
     }
 
-    // 3. Trusted address config check
+    // 3. Trusted contract config check
     try {
       const paymasterRelayHub = await paymasterContract.getRelayHub();
       const paymasterTF = await paymasterContract.getTrustedForwarder();
       const isTF = await deploymentManager.isTrustedForwarder(paymasterTF);
+      const resolvedRelayHub = await relayHub.getAddress();
 
       console.log("✅ Paymaster.relayHub:", paymasterRelayHub);
       console.log("✅ Paymaster.trustedForwarder:", paymasterTF);
       console.log("✅ DeploymentManager.isTrustedForwarder:", isTF);
 
+      if (paymasterRelayHub.toLowerCase() !== resolvedRelayHub.toLowerCase()) {
+        throw new Error("RelayHub mismatch on Paymaster");
+      }
       if (!isTF) throw new Error("TrustedForwarder mismatch on DeploymentManager");
     } catch (err) {
-      console.error("❌ Trusted address configuration mismatch:", err.message || err);
+      console.error("❌ Trusted address configuration mismatch:", err.message);
       return res.status(500).json({ error: "Trusted contract configuration error" });
     }
 
-    // 4. Simulate relayCall via staticCall
+    // 4. Simulate call
     try {
-      console.log("🔍 Simulating relayCall via staticCall()...");
+      console.log("🔍 Simulating relayCall...");
 
       const relayCallTx = relayHub.relayCall(
         paymaster,
@@ -119,51 +109,44 @@ app.post("/relay", async (req, res) => {
         user
       );
 
-      const result = await relayCallTx.staticCall({
+      await relayCallTx.staticCall({
         from: relayerAddress,
         gasLimit: 1_000_000,
         gasPrice: await provider.getGasPrice(),
       });
 
-      console.log("✅ staticCall.relayCall succeeded:", result);
+      console.log("✅ staticCall.relayCall succeeded");
     } catch (staticErr) {
-      console.error("❌ staticCall.relayCall failed:");
-      console.dir(staticErr, { depth: null });
+      console.error("❌ staticCall.relayCall failed:", staticErr.message);
 
       let decodedReason = staticErr?.reason || staticErr?.message;
-
       if (staticErr?.data) {
         try {
           const parsed = new ethers.Interface(relayHubAbi).parseError(staticErr.data);
-          console.log("🔎 Decoded revert reason:", parsed.name, parsed.args);
           decodedReason = `${parsed.name}(${parsed.args.map(String).join(", ")})`;
         } catch {
-          console.warn("⚠️ Could not decode staticCall revert reason");
+          console.warn("⚠️ Failed to decode error");
         }
       }
 
-      // Fallback simulations
       try {
-        const context = await paymasterContract.preRelayedCall.staticCall(user, gasLimit);
-        console.log("✅ preRelayedCall simulated:", context);
+        await paymasterContract.preRelayedCall.staticCall(user, gasLimit);
+        console.log("✅ preRelayedCall simulated");
       } catch (e) {
         console.warn("❌ preRelayedCall failed:", e.reason || e.message);
       }
 
       try {
-        const testName = "TestProject";
-        const testSim = await deploymentManager.createProject.staticCall(testName);
-        console.log("✅ createProject simulated:", testSim);
+        await deploymentManager.createProject.staticCall("TestProject");
+        console.log("✅ createProject simulated");
       } catch (e) {
         console.warn("❌ createProject failed:", e.reason || e.message);
       }
 
-      return res.status(500).json({
-        error: decodedReason || "relayCall() reverted in simulation",
-      });
+      return res.status(500).json({ error: decodedReason });
     }
 
-    // 5. Send transaction
+    // 5. Send Transaction
     const feeData = await provider.getFeeData();
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
@@ -182,10 +165,7 @@ app.post("/relay", async (req, res) => {
     console.log("⛽ Relay tx broadcast:", tx.hash);
     const receipt = await tx.wait();
 
-    if (receipt.status !== 1) {
-      console.error("❌ Transaction reverted on-chain:", receipt);
-      throw new Error("Transaction reverted on-chain");
-    }
+    if (receipt.status !== 1) throw new Error("Transaction reverted on-chain");
 
     for (const log of receipt.logs) {
       try {
@@ -193,23 +173,18 @@ app.post("/relay", async (req, res) => {
         if (parsed.name === "DebugMsgSender") {
           console.log("🪵 DebugMsgSender:", parsed.args);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
-    const txHash = receipt.hash;
-    console.log("✅ Responding with txHash:", txHash);
-    res.status(200).json({ txHash });
+    res.status(200).json({ txHash: receipt.hash });
 
   } catch (err) {
-    console.error("❌ Relay failed (outer):");
-    console.dir(err, { depth: null });
+    console.error("❌ Relay failed:", err);
 
     let decodedReason = err?.reason || err?.message;
     if (err?.data) {
       try {
-        const parsed = relayHub.interface.parseError(err.data);
+        const parsed = new ethers.Interface(relayHubAbi).parseError(err.data);
         decodedReason = `${parsed.name}(${parsed.args.map(String).join(", ")})`;
       } catch {
         console.warn("⚠️ Failed to decode outer revert reason");
@@ -223,41 +198,27 @@ app.post("/relay", async (req, res) => {
 // ─── Status Endpoint ─────────────────────────────────────────────────────────
 app.get("/status", async (req, res) => {
   try {
-    const paymasterAddress = process.env.MODL_PAYMASTER_ADDRESS;
-    const paymaster = new ethers.Contract(paymasterAddress, paymasterAbi, provider);
+    const paymaster = new ethers.Contract(modlPaymasterAddress, paymasterAbi, provider);
+    const paymasterTF = await paymaster.getTrustedForwarder();
+    const paymasterRelayHub = await paymaster.getRelayHub();
+    const isTF = await deploymentManager.isTrustedForwarder(paymasterTF);
+    const deposit = await relayHub.deposits(modlPaymasterAddress);
 
-    const [
-      paymasterRelayHub,
-      paymasterTF,
-      isTF,
-      deposit,
-      relayerInfo
-    ] = await Promise.all([
-      paymaster.getRelayHub(),
-      paymaster.getTrustedForwarder(),
-      deploymentManager.isTrustedForwarder(await paymaster.getTrustedForwarder()),
-      relayHub.deposits(paymasterAddress),
-      (async () => {
-        try {
-          return await relayHub.getRelayWorkerInfo.staticCall(relayerAddress);
-        } catch {
-          return null;
-        }
-      })()
-    ]);
-
-    const balanceEth = ethers.formatEther(deposit);
+    let relayerInfo = null;
+    try {
+      relayerInfo = await relayHub.getRelayWorkerInfo.staticCall(relayerAddress);
+    } catch {}
 
     res.status(200).json({
       status: "ok",
-      paymaster: paymasterAddress,
-      relayHub: relayHub.target,
+      paymaster: modlPaymasterAddress,
+      relayHub: await relayHub.getAddress(),
       deploymentManager: deploymentManagerAddress,
       trustedForwarder: paymasterTF,
       config: {
-        relayHubSet: paymasterRelayHub === relayHub.target,
+        relayHubSet: paymasterRelayHub === await relayHub.getAddress(),
         trustedForwarderSet: isTF,
-        paymasterETH: `${balanceEth} ETH`,
+        paymasterETH: `${ethers.formatEther(deposit)} ETH`,
         relayerTrusted: relayerInfo !== null,
       },
       raw: {
@@ -270,13 +231,8 @@ app.get("/status", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ /status diagnostics failed:");
-    console.dir(err, { depth: null });
-
-    res.status(500).json({
-      status: "error",
-      message: err?.message || "Internal diagnostics error",
-    });
+    console.error("❌ /status diagnostics failed:", err);
+    res.status(500).json({ status: "error", message: err?.message || "Diagnostics error" });
   }
 });
 
