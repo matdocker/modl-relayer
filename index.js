@@ -25,7 +25,7 @@ const relayHub = new ethers.Contract(
   relayHubAbi,
   wallet
 );
-console.log("🛡  Using RelayHub proxy:", relayHub.target);
+console.log("🛡  Using RelayHub proxy at:", relayHub.address);
 
 const deploymentManagerAddress = process.env.DEPLOYMENT_MANAGER_ADDRESS;
 const deploymentManager = new ethers.Contract(
