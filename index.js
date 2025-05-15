@@ -19,9 +19,10 @@ const paymasterAbi = paymasterJson.abi;
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 const relayerAddress = wallet.address;
+const relayHubAddress = process.env.RELAY_HUB_ADDRESS
 
 const relayHub = new ethers.Contract(
-  process.env.RELAY_HUB_ADDRESS,
+relayHubAddress,
   relayHubAbi,
   wallet
 );
