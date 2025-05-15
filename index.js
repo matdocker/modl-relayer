@@ -28,10 +28,11 @@ app.get("/health", (req, res) => {
 });
 
 // ─── /relay endpoint ─────────────────────────────────────────────────────────
+// ✅ Updated /relay Endpoint with Paymaster Contract Instantiation
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
-  console.log("🛰️ /relay endpoint hit");
+  console.log("🚀 /relay endpoint hit");
 
   if (!paymaster || !target || !encodedData || !gasLimit || !user) {
     console.warn("⚠️ Missing fields in request body");
@@ -58,9 +59,8 @@ app.post("/relay", async (req, res) => {
 
     // 💰 2. Check Paymaster ETH balance
     try {
-      const deposit = await relayHub.getDeposit.staticCall(paymaster);
+      const deposit = await relayHub.deposits(paymaster);
       console.log("💰 Paymaster deposit:", ethers.formatEther(deposit), "ETH");
-
       if (deposit < ethers.parseEther("0.01")) {
         console.warn("⚠️ Low Paymaster balance — top up recommended");
       }
@@ -70,8 +70,9 @@ app.post("/relay", async (req, res) => {
 
     // 🛠️ 3. Check internal config on-chain
     try {
-      const paymasterRelayHub = await paymaster.getRelayHub();
-      const paymasterTF = await paymaster.getTrustedForwarder();
+      const paymasterContract = new ethers.Contract(paymaster, paymasterAbi, provider);
+      const paymasterRelayHub = await paymasterContract.getRelayHub();
+      const paymasterTF = await paymasterContract.getTrustedForwarder();
       const isTF = await deploymentManager.isTrustedForwarder(paymasterTF);
 
       console.log("✅ Paymaster.relayHub:", paymasterRelayHub);
@@ -84,30 +85,28 @@ app.post("/relay", async (req, res) => {
       return res.status(500).json({ error: "Trusted contract configuration error" });
     }
 
-    // 🔍 4. Simulate staticCall for relayCall (Phase 2)
-try {
-  console.log("🔍 Simulating relayCall via staticCall()...");
+    // 🔍 4. Simulate staticCall for relayCall
+    try {
+      console.log("🔍 Simulating relayCall via staticCall()...");
 
-  const iface = new ethers.Interface(relayHubAbi);
-  const relayCallTx = relayHub.relayCall(
-    paymaster,
-    target,
-    dataWithUser,
-    gasLimit,
-    user
-  );
+      const relayCallTx = relayHub.relayCall(
+        paymaster,
+        target,
+        dataWithUser,
+        gasLimit,
+        user
+      );
 
-  const result = await relayCallTx.staticCall({
-    from: relayerAddress,
-    gasLimit: 1_000_000,
-    gasPrice: await provider.getGasPrice()
-  });
+      const result = await relayCallTx.staticCall({
+        from: relayerAddress,
+        gasLimit: 1_000_000,
+        gasPrice: await provider.getGasPrice(),
+      });
 
-  console.log("✅ staticCall.relayCall succeeded:", result);
-
-} catch (staticErr) {
-  console.error("❌ staticCall.relayCall failed:");
-  console.dir(staticErr, { depth: null });
+      console.log("✅ staticCall.relayCall succeeded:", result);
+    } catch (staticErr) {
+      console.error("❌ staticCall.relayCall failed:");
+      console.dir(staticErr, { depth: null });
 
       let decodedReason = staticErr?.reason || staticErr?.message;
 
@@ -121,9 +120,9 @@ try {
         }
       }
 
-      // 🔬 Optional: fallback simulate individual components
       try {
-        const context = await paymaster.preRelayedCall.staticCall(user, gasLimit);
+        const paymasterContract = new ethers.Contract(paymaster, paymasterAbi, provider);
+        const context = await paymasterContract.preRelayedCall.staticCall(user, gasLimit);
         console.log("✅ preRelayedCall simulated:", context);
       } catch (e) {
         console.warn("❌ preRelayedCall failed:", e.reason || e.message);
@@ -141,8 +140,6 @@ try {
         error: decodedReason || "relayCall() reverted in simulation",
       });
     }
-
-
 
     // ⚙️ Build & send tx
     const feeData = await provider.getFeeData();
@@ -168,7 +165,6 @@ try {
       throw new Error("Transaction reverted on-chain");
     }
 
-    // 🪵 Debug logs
     for (const log of receipt.logs) {
       try {
         const parsed = deploymentManagerInterface.parseLog(log);
@@ -204,11 +200,10 @@ try {
       }
     }
 
-    res.status(500).json({
-      error: decodedReason || "Relay error",
-    });
+    res.status(500).json({ error: decodedReason || "Relay error" });
   }
 });
+
 
 app.get("/status", async (req, res) => {
   try {
