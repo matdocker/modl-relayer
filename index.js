@@ -13,8 +13,8 @@ app.use(express.json());
 // ─── Contract setup ──────────────────────────────────────────────────────────
 const relayHubAbi = require("./abi/MODLRelayHub.json").abi;
 const deploymentManagerAbi = require("./abi/DeploymentManager.json").abi;
-const paymasterJson = require("./abi/MODLPaymaster.json");
-const paymasterAbi = paymasterJson.abi;
+const paymasterJson = require("./abi/MODLPaymaster.json").abi;
+const paymasterAbi = paymasterJson;
 
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
@@ -22,7 +22,7 @@ const relayerAddress = wallet.address;
 const relayHubAddress = process.env.RELAY_HUB_ADDRESS
 
 console.error("❌ RELAY_HUB_ADDRESS:", process.env.RELAY_HUB_ADDRESS);
-console.error("❌ RELAY_HUB_ABI:", JSON.stringify(paymasterAbi));
+console.error("❌ RELAY_HUB_ABI:", JSON.stringify(relayHubAbi));
 
 if (!process.env.RELAY_HUB_ADDRESS) {
   console.error("❌ RELAY_HUB_ADDRESS is missing or undefined", process.env.RELAY_HUB_ADDRESS);
