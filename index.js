@@ -57,8 +57,7 @@ app.post("/relay", async (req, res) => {
   try {
     console.table({ paymaster, target, gasLimit, user });
 
-    const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
-    const dataWithUser = encodedData + userBytes.slice(2);
+    const dataWithUser = encodedData;
 
     const paymasterContract = new ethers.Contract(paymaster, paymasterAbi, provider);
 
@@ -177,7 +176,7 @@ app.post("/relay", async (req, res) => {
       } catch {}
     }
 
-    res.status(200).json({ txHash: receipt.hash });
+    res.status(200).json({ txHash: receipt.hash, gasUsed, modlFee, userTier  });
 
   } catch (err) {
     console.error("❌ Relay failed:", err);
