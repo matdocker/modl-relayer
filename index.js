@@ -57,15 +57,14 @@ app.post("/relay", async (req, res) => {
   try {
     console.table({ paymaster, target, gasLimit, user });
 
-    // 🧠 Append user to calldata (ERC-2771)
+    // 🧠 Append user to calldata for ERC-2771 compatibility
     const userBytes = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [user]);
     const dataWithUser = encodedData + userBytes.slice(2);
 
     const feeData = await provider.getFeeData();
-
     const paymasterContract = new ethers.Contract(paymaster, paymasterAbi, provider);
 
-    // 1. Relayer Status (optional)
+    // 1. Relayer Status
     try {
       const relayerInfo = await relayHub.getRelayWorkerInfo.staticCall(relayerAddress);
       console.log("🔐 Relayer is trusted/staked:", relayerInfo);
@@ -73,7 +72,7 @@ app.post("/relay", async (req, res) => {
       console.warn("⚠️ getRelayWorkerInfo not implemented — skipping check");
     }
 
-    // 2. Paymaster deposit
+    // 2. Paymaster Deposit Check
     try {
       const deposit = await relayHub.deposits(paymaster);
       console.log("💰 Paymaster deposit:", ethers.formatEther(deposit), "ETH");
@@ -81,7 +80,7 @@ app.post("/relay", async (req, res) => {
       console.warn("⚠️ Could not fetch Paymaster deposit");
     }
 
-    // 3. Trusted config validation
+    // 3. Trusted Config Check
     try {
       const paymasterRelayHub = await paymasterContract.getRelayHub();
       const paymasterTF = await paymasterContract.getTrustedForwarder();
@@ -97,37 +96,34 @@ app.post("/relay", async (req, res) => {
       }
       if (!isTF) throw new Error("TrustedForwarder mismatch on DeploymentManager");
 
-      // ✅ Extra paranoia: check encodedData ends with user address (optional)
-      if (!encodedData.endsWith(userBytes.slice(2))) {
-        console.warn("⚠️ User address not properly appended to calldata");
+      if (!dataWithUser.endsWith(userBytes.slice(2))) {
+        console.warn("⚠️ Appended user not found in calldata, ERC2771 may fail");
       }
     } catch (err) {
       console.error("❌ Trusted address configuration mismatch:", err.message);
       return res.status(500).json({ error: "Trusted contract configuration error" });
     }
 
-    // 4. Simulate relayCall via staticCall
+    // 4. Simulate relayCall via callStatic
     try {
       console.log("🔍 Simulating relayCall...");
 
-      const relayCallTx = relayHub.relayCall(
+      await relayHub.callStatic.relayCall(
         paymaster,
         target,
         dataWithUser,
         gasLimit,
-        user
+        user,
+        {
+          from: relayerAddress,
+          gasLimit: 1_000_000,
+          gasPrice: feeData.gasPrice ?? undefined,
+        }
       );
 
-      await relayCallTx.staticCall({
-        from: relayerAddress,
-        gasLimit: 1_000_000,
-        gasPrice: feeData.gasPrice ?? undefined,
-      });
-
-      console.log("✅ staticCall.relayCall succeeded");
+      console.log("✅ callStatic.relayCall succeeded");
     } catch (staticErr) {
-      console.error("❌ staticCall.relayCall failed:", staticErr.message);
-
+      console.error("❌ callStatic.relayCall failed:", staticErr.message);
       let decodedReason = staticErr?.reason || staticErr?.message;
 
       if (staticErr?.data) {
@@ -140,7 +136,7 @@ app.post("/relay", async (req, res) => {
         }
       }
 
-      // 🔍 Debug fallback simulations
+      // 🔍 Additional Debug Simulations
       try {
         await paymasterContract.preRelayedCall.staticCall(user, gasLimit);
         console.log("✅ preRelayedCall simulated");
@@ -149,16 +145,22 @@ app.post("/relay", async (req, res) => {
       }
 
       try {
-        await deploymentManager.createProject.staticCall("TestProject");
-        console.log("✅ createProject simulated");
+        const testCalldata = deploymentManager.interface.encodeFunctionData("createProject", ["TestProject"]);
+        const fullData = testCalldata + userBytes.slice(2);
+        const simulation = await provider.call({
+          to: target,
+          data: fullData,
+          from: relayerAddress,
+        });
+        console.log("✅ Raw call to createProject succeeded:", simulation);
       } catch (e) {
-        console.warn("❌ createProject failed:", e.reason || e.message);
+        console.warn("❌ Raw createProject call failed:", e.reason || e.message);
       }
 
       return res.status(500).json({ error: decodedReason });
     }
 
-    // 5. Send Transaction via relayCall
+    // 5. Send Actual Transaction via RelayHub
     const txReq = await relayHub.relayCall.populateTransaction(
       paymaster,
       target,
@@ -167,7 +169,6 @@ app.post("/relay", async (req, res) => {
       user
     );
 
-    // 🧠 Smarter gas buffer: add 20% safety margin
     const adjustedGasLimit = Math.floor(Number(gasLimit) * 1.2);
 
     const tx = await wallet.sendTransaction({
@@ -181,7 +182,7 @@ app.post("/relay", async (req, res) => {
 
     if (receipt.status !== 1) throw new Error("Transaction reverted on-chain");
 
-    // 🪵 Deep log analysis (RelayHub + Paymaster + DeploymentManager)
+    // 🪵 Deep Log Debugging
     const logs = [];
     for (const log of receipt.logs) {
       try {
@@ -204,15 +205,15 @@ app.post("/relay", async (req, res) => {
     res.status(200).json({
       txHash: receipt.hash,
       gasUsed: receipt.gasUsed.toString(),
-      modlFee: null,         // ⏳ Optional: pull from FeeManager
-      userTier: null,        // ⏳ Optional: pull from TierSystem
+      modlFee: null,
+      userTier: null,
       logs
     });
 
   } catch (err) {
     console.error("❌ Relay failed:", err);
-
     let decodedReason = err?.reason || err?.message;
+
     if (err?.data) {
       try {
         const parsed = new ethers.Interface(relayHubAbi).parseError(err.data);
@@ -226,6 +227,7 @@ app.post("/relay", async (req, res) => {
     res.status(500).json({ error: decodedReason || "Relay error" });
   }
 });
+
 
 // ─── Status Endpoint ─────────────────────────────────────────────────────────
 app.get("/status", async (req, res) => {
