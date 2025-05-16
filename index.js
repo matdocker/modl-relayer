@@ -60,26 +60,28 @@ app.post("/relay", async (req, res) => {
     }
 
     // 4. Simulate relayCall via staticCall
+    // Replace your simulation logic with this:
     try {
       console.log("🔍 Simulating relayCall...");
 
-      const relayCallTx = relayHub.relayCall(
+      const feeData = await provider.getFeeData();
+
+      await relayHub.callStatic.relayCall(
         paymaster,
         target,
         dataWithUser,
         gasLimit,
-        user
+        user,
+        {
+          from: relayerAddress,
+          gasLimit: 1_000_000,
+          gasPrice: feeData.gasPrice ?? undefined,
+        }
       );
 
-      await relayCallTx.staticCall({
-        from: relayerAddress,
-        gasLimit: 1_000_000,
-        gasPrice: feeData.gasPrice ?? undefined,
-      });
-
-      console.log("✅ staticCall.relayCall succeeded");
+      console.log("✅ callStatic.relayCall succeeded");
     } catch (staticErr) {
-      console.error("❌ staticCall.relayCall failed:", staticErr.message);
+      console.error("❌ callStatic.relayCall failed:", staticErr.message);
 
       let decodedReason = staticErr?.reason || staticErr?.message;
 
@@ -92,6 +94,9 @@ app.post("/relay", async (req, res) => {
           console.warn("Raw error data:", staticErr.data);
         }
       }
+
+      return res.status(500).json({ error: decodedReason });
+    }
 
       // 🔍 Debug fallback simulations
       try {
