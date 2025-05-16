@@ -112,7 +112,7 @@ app.post("/relay", async (req, res) => {
       await relayCallTx.staticCall({
         from: relayerAddress,
         gasLimit: 1_000_000,
-        gasPrice: await provider.getGasPrice(),
+        gasPrice: feeData.gasPrice ?? undefined,
       });
 
       console.log("✅ staticCall.relayCall succeeded");
