@@ -1,3 +1,50 @@
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const { ethers } = require("ethers");
+
+const app = express();
+const port = process.env.PORT || 8080;
+
+app.use(cors());
+app.use(express.json());
+
+// ─── Load Contracts and ABI ──────────────────────────────────────────────────
+const relayHubJson = require("./abi/MODLRelayHub.json");
+const relayHubAbi = relayHubJson.abi;
+
+const deploymentManagerJson = require("./abi/DeploymentManager.json");
+const deploymentManagerAbi = deploymentManagerJson.abi;
+
+const paymasterJson = require("./abi/MODLPaymaster.json");
+const paymasterAbi = paymasterJson.abi;
+
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+const relayerAddress = wallet.address;
+
+const relayHubAddress = "0x2422d7712e858582D9CE8286AB38ab5Ec62f532A";
+const deploymentManagerAddress = '0xBC7e41034c028724de34C7AeE97De6758fae8761';
+const modlPaymasterAddress = "0xf4782DcfFEE16013bFc0337901167c9D44C687fA";
+
+// ─── Validations ─────────────────────────────────────────────────────────────
+if (!relayHubAddress || !deploymentManagerAddress || !modlPaymasterAddress) {
+  console.error("❌ Missing critical env vars: RELAY_HUB_ADDRESS, DEPLOYMENT_MANAGER_ADDRESS, MODL_PAYMASTER_ADDRESS");
+  console.error("relayHubAddress:",relayHubAddress,"deploymentManagerAddress:",deploymentManagerAddress, "modlPaymasterAddress:",modlPaymasterAddress)
+  process.exit(1);
+}
+
+// ─── Instantiate Contracts ───────────────────────────────────────────────────
+const relayHub = new ethers.Contract(relayHubAddress, relayHubAbi, wallet);
+const deploymentManager = new ethers.Contract(deploymentManagerAddress, deploymentManagerAbi, provider);
+const deploymentManagerInterface = new ethers.Interface(deploymentManagerAbi);
+
+// ─── Health Check ────────────────────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
+// ─── Relay Endpoint ──────────────────────────────────────────────────────────
 app.post("/relay", async (req, res) => {
   const { paymaster, target, encodedData, gasLimit, user } = req.body;
 
@@ -60,28 +107,26 @@ app.post("/relay", async (req, res) => {
     }
 
     // 4. Simulate relayCall via staticCall
-    // Replace your simulation logic with this:
     try {
       console.log("🔍 Simulating relayCall...");
 
-      const feeData = await provider.getFeeData();
-
-      await relayHub.callStatic.relayCall(
+      const relayCallTx = relayHub.relayCall(
         paymaster,
         target,
         dataWithUser,
         gasLimit,
-        user,
-        {
-          from: relayerAddress,
-          gasLimit: 1_000_000,
-          gasPrice: feeData.gasPrice ?? undefined,
-        }
+        user
       );
 
-      console.log("✅ callStatic.relayCall succeeded");
+      await relayCallTx.staticCall({
+        from: relayerAddress,
+        gasLimit: 1_000_000,
+        gasPrice: feeData.gasPrice ?? undefined,
+      });
+
+      console.log("✅ staticCall.relayCall succeeded");
     } catch (staticErr) {
-      console.error("❌ callStatic.relayCall failed:", staticErr.message);
+      console.error("❌ staticCall.relayCall failed:", staticErr.message);
 
       let decodedReason = staticErr?.reason || staticErr?.message;
 
@@ -94,9 +139,6 @@ app.post("/relay", async (req, res) => {
           console.warn("Raw error data:", staticErr.data);
         }
       }
-
-      return res.status(500).json({ error: decodedReason });
-    }
 
       // 🔍 Debug fallback simulations
       try {
@@ -183,4 +225,50 @@ app.post("/relay", async (req, res) => {
 
     res.status(500).json({ error: decodedReason || "Relay error" });
   }
+});
+
+// ─── Status Endpoint ─────────────────────────────────────────────────────────
+app.get("/status", async (req, res) => {
+  try {
+    const paymaster = new ethers.Contract(modlPaymasterAddress, paymasterAbi, provider);
+    const paymasterTF = await paymaster.getTrustedForwarder();
+    const paymasterRelayHub = await paymaster.getRelayHub();
+    const isTF = await deploymentManager.isTrustedForwarder(paymasterTF);
+    const deposit = await relayHub.deposits(modlPaymasterAddress);
+
+    let relayerInfo = null;
+    try {
+      relayerInfo = await relayHub.getRelayWorkerInfo.staticCall(relayerAddress);
+    } catch {}
+
+    res.status(200).json({
+      status: "ok",
+      paymaster: modlPaymasterAddress,
+      relayHub: await relayHub.getAddress(),
+      deploymentManager: deploymentManagerAddress,
+      trustedForwarder: paymasterTF,
+      config: {
+        relayHubSet: paymasterRelayHub === await relayHub.getAddress(),
+        trustedForwarderSet: isTF,
+        paymasterETH: `${ethers.formatEther(deposit)} ETH`,
+        relayerTrusted: relayerInfo !== null,
+      },
+      raw: {
+        paymasterRelayHub,
+        paymasterTF,
+        isTrustedForwarder: isTF,
+        deposit: deposit.toString(),
+        relayerInfo
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ /status diagnostics failed:", err);
+    res.status(500).json({ status: "error", message: err?.message || "Diagnostics error" });
+  }
+});
+
+// ─── Start Server ────────────────────────────────────────────────────────────
+app.listen(port, () => {
+  console.log(`✅ MODL Relayer listening on http://localhost:${port}`);
 });
